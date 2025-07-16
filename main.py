@@ -16,26 +16,28 @@ cart = {}
 user_wishes = {}
 user_names = {}
 
+favorites = {}  # user_id: [product1, ...]
+
 @bot.message_handler(commands=['start'])
 def start(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row('Меню', 'Корзина')
-    markup.row('Новый заказ')
+    markup.row('Избранное', 'Новый заказ')
     bot.send_message(message.chat.id, "Добро пожаловать! Выберите действие:", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == 'Меню')
 def show_menu(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row('Self-made drinks', 'Холодные напитки', 'Десерты Пастуховы', 'Быстрый перекус','Шоколадки')
+    markup.row('Кофе', 'Вода', 'Десерты', 'Еда', 'Шоколадки')
     markup.row('Назад')
     bot.send_message(message.chat.id, "Выберите категорию:", reply_markup=markup)
 
 products = {
-    'Self-made drinks': ['Эспрессо', 'Капучино', 'Латте','Флэт Уайт','Американо','Раф','Лимонад','Эспрессо тоник','Айс-кофе','Какао','Чай','Матча'],
-    'Холодные напитки': ['Кола', 'Спрайт','Фанта','Мохито швепс','Квас','Ред Булл - 0,3','Ред булл 0,5','Адреналин','Боржоми','Святой источник'],
-    'Десерты Пастуховы':['Молочный ломтик','Зефир','Суфле'],
-    'Быстрый перекус':['Чиабатта ветчина и сыр','Чиабатта пепперони и салями','Чиабатта с курицей','Круассан с беконом и халапенью','Блинчики с курицей и сыром','Сырники','Салат цезарь','Орешки со сгущенкой','Печенье 2 шоколада','Трубочка со сгущенкой'],
-    'Шоколадки':['Mars','Snickers','Twix','Picnic']
+    'Кофе': ['Эспрессо', 'Капучино', 'Латте','Флэт Уайт','Американо','Раф','Лимонад','Эспрессо тоник','Айс-кофе','Какао','Чай','Матча'],
+    'Вода': ['Кола', 'Спрайт','Фанта','Мохито швепс','Квас','Ред Булл - 0,3','Ред булл 0,5','Адреналин','Боржоми','Святой источник'],
+    'Десерты': ['Молочный ломтик','Зефир','Суфле'],
+    'Еда': ['Чиабатта ветчина и сыр','Чиабатта пепперони и салями','Чиабатта с курицей','Круассан с беконом и халапенью','Блинчики с курицей и сыром','Сырники','Салат цезарь','Орешки со сгущенкой','Печенье 2 шоколада','Трубочка со сгущенкой'],
+    'Шоколадки': ['Mars','Snickers','Twix','Picnic']
 }
 
 prices = {
@@ -124,12 +126,10 @@ def choose_product(message):
             # Не кофейный напиток — сразу добавляем
             price = prices.get(product, 0)
             cart.setdefault(user_id, []).append(f"{product} — {price}₽")
-            bot.send_message(message.chat.id, f"{product} добавлен в корзину по цене {price}₽!")
-            # Возвращаем начальное меню
+            # Добавляем кнопки для добавления в избранное
             markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-            markup.row('Self-made drinks', 'Холодные напитки', 'Десерты Пастуховы', 'Быстрый перекус','Шоколадки')
-            markup.row('Назад')
-            bot.send_message(message.chat.id, "Выберите категорию:", reply_markup=markup)
+            markup.row('Добавить в избранное', 'В меню категорий')
+            bot.send_message(message.chat.id, f"{product} добавлен в корзину по цене {price}₽!", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: any(isinstance(prices.get(prod), dict) and m.text in prices[prod] for prod in prices if prod in user_volume_choice.values()))
 def add_product_with_volume(message):
@@ -149,7 +149,7 @@ def add_product_with_volume(message):
             bot.send_message(message.chat.id, f"{product} ({volume}) добавлен в корзину по цене {price}₽!")
             # Возвращаем начальное меню
             markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-            markup.row('Self-made drinks', 'Холодные напитки', 'Десерты Пастуховы', 'Быстрый перекус','Шоколадки')
+            markup.row('Кофе', 'Вода', 'Десерты', 'Еда', 'Шоколадки')
             markup.row('Назад')
             bot.send_message(message.chat.id, "Выберите категорию:", reply_markup=markup)
         user_volume_choice.pop(user_id, None)
@@ -198,7 +198,7 @@ def handle_altmilk(message):
     user_customization.pop(user_id, None)
     # Возвращаем начальное меню
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row('Self-made drinks', 'Холодные напитки', 'Десерты Пастуховы', 'Быстрый перекус','Шоколадки')
+    markup.row('Кофе', 'Вода', 'Десерты', 'Еда', 'Шоколадки')
     markup.row('Назад')
     bot.send_message(message.chat.id, "Выберите категорию:", reply_markup=markup)
 
@@ -298,6 +298,70 @@ def confirm_order(message):
         bot.send_message(message.chat.id, "Пожалуйста, ответьте 'Да' или 'Нет'. Все ли верно?")
         bot.register_next_step_handler(message, confirm_order)
 
+@bot.message_handler(func=lambda m: m.text == 'Избранное')
+def show_favorites(message):
+    user_id = message.from_user.id
+    favs = favorites.get(user_id, [])
+    if not favs:
+        bot.send_message(message.chat.id, "У вас нет избранных товаров.")
+        return
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    for fav in favs:
+        markup.row(fav)
+    markup.row('Добавить все в корзину', 'Очистить избранное')
+    markup.row('Назад')
+    bot.send_message(message.chat.id, "Ваши избранные товары:", reply_markup=markup)
+
+@bot.message_handler(func=lambda m: m.text == 'Добавить все в корзину')
+def add_all_favorites_to_cart(message):
+    user_id = message.from_user.id
+    favs = favorites.get(user_id, [])
+    if not favs:
+        bot.send_message(message.chat.id, "У вас нет избранных товаров.")
+        return
+    for fav in favs:
+        price = prices.get(fav, 0)
+        cart.setdefault(user_id, []).append(f"{fav} — {price}₽")
+    bot.send_message(message.chat.id, "Все избранные товары добавлены в корзину!")
+    # Показываем корзину
+    show_cart(message)
+
+@bot.message_handler(func=lambda m: m.text == 'Очистить избранное')
+def clear_favorites(message):
+    user_id = message.from_user.id
+    favorites[user_id] = []
+    bot.send_message(message.chat.id, "Избранное очищено.")
+    show_favorites(message)
+
+@bot.message_handler(func=lambda m: m.text == 'Добавить в избранное')
+def add_to_favorites(message):
+    user_id = message.from_user.id
+    # Найти последний добавленный товар в корзине
+    items = cart.get(user_id, [])
+    if not items:
+        bot.send_message(message.chat.id, "Сначала добавьте товар в корзину.")
+        return
+    last_item = items[-1]
+    # Извлечь название товара (до '—')
+    product_name = last_item.split('—')[0].strip()
+    if product_name in favorites.get(user_id, []):
+        bot.send_message(message.chat.id, f"{product_name} уже в избранном!")
+    else:
+        favorites.setdefault(user_id, []).append(product_name)
+        bot.send_message(message.chat.id, f"{product_name} добавлен в избранное!")
+    # Возвращаемся к меню категорий
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row('Кофе', 'Вода', 'Десерты', 'Еда', 'Шоколадки')
+    markup.row('Назад')
+    bot.send_message(message.chat.id, "Выберите категорию:", reply_markup=markup)
+
+@bot.message_handler(func=lambda m: m.text == 'В меню категорий')
+def back_to_categories(message):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.row('Кофе', 'Вода', 'Десерты', 'Еда', 'Шоколадки')
+    markup.row('Назад')
+    bot.send_message(message.chat.id, "Выберите категорию:", reply_markup=markup)
+
 @bot.message_handler(func=lambda m: m.text == 'Назад')
 def go_back(message):
     start(message)
@@ -312,7 +376,7 @@ def new_order(message):
     # Возвращаем к стартовому меню
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.row('Меню', 'Корзина')
-    markup.row('Новый заказ')
+    markup.row('Избранное', 'Новый заказ')
     bot.send_message(message.chat.id, "Корзина и данные сброшены. Начните новый заказ!", reply_markup=markup)
 
 bot.polling(none_stop=True)
