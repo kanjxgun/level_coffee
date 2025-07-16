@@ -16,7 +16,8 @@ cart = {}
 user_wishes = {}
 user_names = {}
 
-favorites = {}  # user_id: [product1, ...]
+# Избранное теперь хранит список словарей с параметрами товара
+favorites = {}  # user_id: [ {product, volume, syrup, altmilk, price}, ... ]
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -102,6 +103,23 @@ def show_products(message):
     markup.row('Назад')
     bot.send_message(message.chat.id, f"Выберите товар из категории {message.text}:", reply_markup=markup)
 
+# --- Новый обработчик: добавить в избранное товар без параметров ---
+@bot.message_handler(func=lambda m: m.text.startswith('★ '))
+def add_simple_favorite(message):
+    user_id = message.from_user.id
+    product = message.text[2:]
+    # Проверяем, есть ли параметры у товара
+    if isinstance(prices.get(product), dict) or product in coffee_drinks:
+        bot.send_message(message.chat.id, "Для добавления этого товара в избранное выберите параметры!")
+        return
+    fav = {'product': product, 'volume': None, 'syrup': False, 'altmilk': False, 'price': prices.get(product, 0)}
+    if fav in favorites.get(user_id, []):
+        bot.send_message(message.chat.id, f"{product} уже в избранном!")
+    else:
+        favorites.setdefault(user_id, []).append(fav)
+        bot.send_message(message.chat.id, f"{product} добавлен в избранное!")
+
+# --- Изменяем обработчик выбора товара ---
 @bot.message_handler(func=lambda m: m.text in all_products)
 def choose_product(message):
     user_id = message.from_user.id
@@ -126,11 +144,12 @@ def choose_product(message):
             # Не кофейный напиток — сразу добавляем
             price = prices.get(product, 0)
             cart.setdefault(user_id, []).append(f"{product} — {price}₽")
-            # Добавляем кнопки для добавления в избранное
+            # Кнопка для добавления в избранное
             markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-            markup.row('Добавить в избранное', 'В меню категорий')
+            markup.row(f'★ {product}', 'В меню категорий')
             bot.send_message(message.chat.id, f"{product} добавлен в корзину по цене {price}₽!", reply_markup=markup)
 
+# --- Изменяем обработчик выбора объема ---
 @bot.message_handler(func=lambda m: any(isinstance(prices.get(prod), dict) and m.text in prices[prod] for prod in prices if prod in user_volume_choice.values()))
 def add_product_with_volume(message):
     user_id = message.from_user.id
@@ -146,17 +165,37 @@ def add_product_with_volume(message):
             bot.send_message(message.chat.id, "Добавить сироп за 50₽?", reply_markup=markup)
         else:
             cart.setdefault(user_id, []).append(f"{product} ({volume}) — {price}₽")
-            bot.send_message(message.chat.id, f"{product} ({volume}) добавлен в корзину по цене {price}₽!")
-            # Возвращаем начальное меню
+            # Кнопка для добавления в избранное
             markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-            markup.row('Кофе', 'Вода', 'Десерты', 'Еда', 'Шоколадки')
-            markup.row('Назад')
-            bot.send_message(message.chat.id, "Выберите категорию:", reply_markup=markup)
+            markup.row(f'★ {product} ({volume})', 'В меню категорий')
+            bot.send_message(message.chat.id, f"{product} ({volume}) добавлен в корзину по цене {price}₽!", reply_markup=markup)
         user_volume_choice.pop(user_id, None)
     else:
         bot.send_message(message.chat.id, "Ошибка выбора объема. Попробуйте снова.")
 
-# Обработка ответа на вопрос о сиропе
+# --- Новый обработчик: добавить в избранное товар с объемом ---
+@bot.message_handler(func=lambda m: m.text.startswith('★ ') and '(' in m.text)
+def add_volume_favorite(message):
+    user_id = message.from_user.id
+    # Пример: ★ Капучино (300 мл)
+    text = message.text[2:]
+    if ' (' in text:
+        product = text.split(' (')[0]
+        volume = text.split('(')[1].split(')')[0]
+    else:
+        product = text
+        volume = None
+    price = 0
+    if product in prices and isinstance(prices[product], dict) and volume in prices[product]:
+        price = prices[product][volume]
+    fav = {'product': product, 'volume': volume, 'syrup': False, 'altmilk': False, 'price': price}
+    if fav in favorites.get(user_id, []):
+        bot.send_message(message.chat.id, f"{product} ({volume}) уже в избранном!")
+    else:
+        favorites.setdefault(user_id, []).append(fav)
+        bot.send_message(message.chat.id, f"{product} ({volume}) добавлен в избранное!")
+
+# --- Изменяем обработку сиропа и молока ---
 @bot.message_handler(func=lambda m: m.text in ['Да', 'Нет'] and m.from_user.id in user_customization)
 def handle_syrup(message):
     user_id = message.from_user.id
@@ -171,7 +210,6 @@ def handle_syrup(message):
     # Следующий шаг — обработка молока
     bot.register_next_step_handler(message, handle_altmilk)
 
-# Обработка ответа на вопрос о молоке
 def handle_altmilk(message):
     user_id = message.from_user.id
     if user_id not in user_customization:
@@ -194,13 +232,108 @@ def handle_altmilk(message):
     if details:
         name = f"{name} + {' + '.join(details)}"
     cart.setdefault(user_id, []).append(f"{name} — {price}₽")
-    bot.send_message(message.chat.id, f"{name} добавлен в корзину по цене {price}₽!")
-    user_customization.pop(user_id, None)
-    # Возвращаем начальное меню
+    # Кнопка для добавления в избранное с параметрами
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.row('Кофе', 'Вода', 'Десерты', 'Еда', 'Шоколадки')
+    markup.row(f'★ {name}', 'В меню категорий')
+    bot.send_message(message.chat.id, f"{name} добавлен в корзину по цене {price}₽!", reply_markup=markup)
+    # Сохраняем параметры для избранного
+    c['price'] = price
+    c['name'] = name
+    user_customization[user_id] = c
+    user_customization.pop(user_id, None)
+
+# --- Новый обработчик: добавить в избранное товар с параметрами (сироп/молоко) ---
+@bot.message_handler(func=lambda m: m.text.startswith('★ ') and ('сироп' in m.text or 'альт. молоко' in m.text))
+def add_full_favorite(message):
+    user_id = message.from_user.id
+    # Пример: ★ Капучино (300 мл) + сироп + альт. молоко
+    text = message.text[2:]
+    # Парсим название, объем, сироп, молоко
+    parts = text.split(' + ')
+    base = parts[0]
+    options = parts[1:] if len(parts) > 1 else []
+    if '(' in base:
+        product = base.split(' (')[0]
+        volume = base.split('(')[1].split(')')[0]
+    else:
+        product = base
+        volume = None
+    syrup = 'сироп' in options
+    altmilk = 'альт. молоко' in options
+    # Определяем цену
+    price = 0
+    if product in prices:
+        if isinstance(prices[product], dict) and volume in prices[product]:
+            price = prices[product][volume]
+        elif isinstance(prices[product], int):
+            price = prices[product]
+    if syrup:
+        price += 50
+    if altmilk:
+        price += 60
+    fav = {'product': product, 'volume': volume, 'syrup': syrup, 'altmilk': altmilk, 'price': price}
+    if fav in favorites.get(user_id, []):
+        bot.send_message(message.chat.id, f"{text} уже в избранном!")
+    else:
+        favorites.setdefault(user_id, []).append(fav)
+        bot.send_message(message.chat.id, f"{text} добавлен в избранное!")
+
+# --- Изменяем отображение избранного ---
+@bot.message_handler(func=lambda m: m.text == 'Избранное')
+def show_favorites(message):
+    user_id = message.from_user.id
+    favs = favorites.get(user_id, [])
+    if not favs:
+        bot.send_message(message.chat.id, "У вас нет избранных товаров.")
+        return
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    for fav in favs:
+        name = fav['product']
+        if fav['volume']:
+            name += f" ({fav['volume']})"
+        details = []
+        if fav['syrup']:
+            details.append('сироп')
+        if fav['altmilk']:
+            details.append('альт. молоко')
+        if details:
+            name += ' + ' + ' + '.join(details)
+        markup.row(name)
+    markup.row('Добавить все в корзину', 'Очистить избранное')
     markup.row('Назад')
-    bot.send_message(message.chat.id, "Выберите категорию:", reply_markup=markup)
+    bot.send_message(message.chat.id, "Ваши избранные товары:", reply_markup=markup)
+
+# --- Изменяем добавление всех избранных в корзину ---
+@bot.message_handler(func=lambda m: m.text == 'Добавить все в корзину')
+def add_all_favorites_to_cart(message):
+    user_id = message.from_user.id
+    favs = favorites.get(user_id, [])
+    if not favs:
+        bot.send_message(message.chat.id, "У вас нет избранных товаров.")
+        return
+    for fav in favs:
+        name = fav['product']
+        if fav['volume']:
+            name += f" ({fav['volume']})"
+        details = []
+        price = fav['price']
+        if fav['syrup']:
+            details.append('сироп')
+        if fav['altmilk']:
+            details.append('альт. молоко')
+        if details:
+            name += ' + ' + ' + '.join(details)
+        cart.setdefault(user_id, []).append(f"{name} — {price}₽")
+    bot.send_message(message.chat.id, "Все избранные товары добавлены в корзину!")
+    show_cart(message)
+
+# --- Изменяем очистку избранного ---
+@bot.message_handler(func=lambda m: m.text == 'Очистить избранное')
+def clear_favorites(message):
+    user_id = message.from_user.id
+    favorites[user_id] = []
+    bot.send_message(message.chat.id, "Избранное очищено.")
+    show_favorites(message)
 
 @bot.message_handler(func=lambda m: m.text == 'Корзина')
 def show_cart(message):
@@ -297,41 +430,6 @@ def confirm_order(message):
     else:
         bot.send_message(message.chat.id, "Пожалуйста, ответьте 'Да' или 'Нет'. Все ли верно?")
         bot.register_next_step_handler(message, confirm_order)
-
-@bot.message_handler(func=lambda m: m.text == 'Избранное')
-def show_favorites(message):
-    user_id = message.from_user.id
-    favs = favorites.get(user_id, [])
-    if not favs:
-        bot.send_message(message.chat.id, "У вас нет избранных товаров.")
-        return
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    for fav in favs:
-        markup.row(fav)
-    markup.row('Добавить все в корзину', 'Очистить избранное')
-    markup.row('Назад')
-    bot.send_message(message.chat.id, "Ваши избранные товары:", reply_markup=markup)
-
-@bot.message_handler(func=lambda m: m.text == 'Добавить все в корзину')
-def add_all_favorites_to_cart(message):
-    user_id = message.from_user.id
-    favs = favorites.get(user_id, [])
-    if not favs:
-        bot.send_message(message.chat.id, "У вас нет избранных товаров.")
-        return
-    for fav in favs:
-        price = prices.get(fav, 0)
-        cart.setdefault(user_id, []).append(f"{fav} — {price}₽")
-    bot.send_message(message.chat.id, "Все избранные товары добавлены в корзину!")
-    # Показываем корзину
-    show_cart(message)
-
-@bot.message_handler(func=lambda m: m.text == 'Очистить избранное')
-def clear_favorites(message):
-    user_id = message.from_user.id
-    favorites[user_id] = []
-    bot.send_message(message.chat.id, "Избранное очищено.")
-    show_favorites(message)
 
 @bot.message_handler(func=lambda m: m.text == 'Добавить в избранное')
 def add_to_favorites(message):
