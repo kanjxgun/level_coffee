@@ -315,14 +315,13 @@ def new_order(message):
     markup.row('Новый заказ')
     bot.send_message(message.chat.id, "Корзина и данные сброшены. Начните новый заказ!", reply_markup=markup)
 
-bot.polling(none_stop=True)
-
 if __name__ == '__main__':
     while True:
         try:
+            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Запуск бота...")
             bot.polling(none_stop=True)
         except Exception as e:
             with open("bot_errors.log", "a", encoding="utf-8") as f:
                 f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} — {str(e)}\n")
-            time.sleep(3)
-            print(e)
+            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Ошибка: {e}. Переподключение через 10 секунд...")
+            time.sleep(10)
